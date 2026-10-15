@@ -1,0 +1,23 @@
+# Render Blueprint: deploys Advance as a Docker web service.
+# Dashboard -> New -> Blueprint -> pick this repo, then fill the secrets below.
+services:
+  - type: web
+    name: advance
+    runtime: docker
+    plan: free
+    healthCheckPath: /healthz
+    envVars:
+      - key: PAYPAL_CLIENT_ID
+        sync: false          # sandbox REST app client ID
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false          # from the webhook you add in the PayPal dashboard
+      - key: ANTHROPIC_API_KEY
+        sync: false          # optional; without it Advance uses rules only
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-5-5
+      - key: DEMO_MODE
+        value: "true"        # adds the "simulate client paying" buttons for judges
+      # The free plan has no persistent disk, so state resets on restart.
+      # On a paid plan, add a disk mounted at /data and set DATA_FILE=/data/state.json.

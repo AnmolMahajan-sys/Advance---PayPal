@@ -1,0 +1,275 @@
+{
+  "info": {
+    "name": "Advance API",
+    "description": "Invoice financing on the PayPal sandbox. Run the folder in order: create, advance, pay (demo), ledger.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "invoiceId",
+      "value": ""
+    },
+    {
+      "key": "apiKey",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Create invoice",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-API-Key",
+            "value": "{{apiKey}}",
+            "disabled": true
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/invoices",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "invoices"
+          ]
+        },
+        "description": "",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"freelancer_email\": \"maya@studio.test\",\n  \"client_email\": \"reliable@example.com\",\n  \"amount_cents\": 250000,\n  \"description\": \"Website redesign, phase 2\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('invoice sent', () => pm.response.to.have.status(201));",
+              "const j = pm.response.json();",
+              "pm.collectionVariables.set('invoiceId', j.id);",
+              "pm.test('status is sent', () => pm.expect(j.status).to.eql('sent'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Request advance",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-API-Key",
+            "value": "{{apiKey}}",
+            "disabled": true
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/invoices/{{invoiceId}}/advance",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "invoices",
+            "{{invoiceId}}",
+            "advance"
+          ]
+        },
+        "description": ""
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "const j = pm.response.json();",
+              "pm.test('approved with an explanation', () => { pm.expect(j.decision.approved).to.be.true; pm.expect(j.decision.explanation).to.be.a('string').and.not.empty; });",
+              "pm.test('advance plus fee is below the invoice', () => pm.expect(j.invoice.advance_cents + j.invoice.fee_cents).to.be.below(j.invoice.amount_cents));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Simulate client paying (demo mode)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-API-Key",
+            "value": "{{apiKey}}",
+            "disabled": true
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/demo/invoices/{{invoiceId}}/pay",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "demo",
+            "invoices",
+            "{{invoiceId}}",
+            "pay"
+          ]
+        },
+        "description": "Only exists when DEMO_MODE=true. With real sandbox credentials, pay the invoice from the pay_url instead and let PayPal's webhook settle it."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('settled', () => pm.expect(pm.response.json().status).to.eql('settled'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Ledger",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-API-Key",
+            "value": "{{apiKey}}",
+            "disabled": true
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/ledger",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "ledger"
+          ]
+        },
+        "description": ""
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('books balance', () => pm.expect(pm.response.json().balanced).to.be.true);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "List invoices",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-API-Key",
+            "value": "{{apiKey}}",
+            "disabled": true
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/invoices",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "invoices"
+          ]
+        },
+        "description": ""
+      }
+    },
+    {
+      "name": "Declined example (risky client)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-API-Key",
+            "value": "{{apiKey}}",
+            "disabled": true
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/invoices",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "invoices"
+          ]
+        },
+        "description": "",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"freelancer_email\": \"maya@studio.test\",\n  \"client_email\": \"risky@example.com\",\n  \"amount_cents\": 100000,\n  \"description\": \"Consulting\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-API-Key",
+            "value": "{{apiKey}}",
+            "disabled": true
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/healthz",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "healthz"
+          ]
+        },
+        "description": ""
+      }
+    }
+  ]
+}

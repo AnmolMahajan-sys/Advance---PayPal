@@ -1,0 +1,161 @@
+openapi: 3.0.3
+info:
+  title: Advance API
+  version: 1.0.0
+  description: >
+    Instant invoice financing for freelancers on the PayPal sandbox. Send an invoice,
+    request an advance (rules plus Claude review), and settle automatically when the
+    client pays. If the server sets API_KEY, send it as `X-API-Key` or `Authorization: Bearer`.
+    Amounts are integer minor units (cents).
+servers:
+  - url: http://localhost:8080
+tags:
+  - name: Invoices
+  - name: Books
+  - name: Webhooks
+  - name: Demo
+paths:
+  /invoices:
+    post:
+      tags: [Invoices]
+      summary: Create and send a PayPal invoice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NewInvoice' }
+      responses:
+        '201': { description: Invoice sent, content: { application/json: { schema: { $ref: '#/components/schemas/Invoice' } } } }
+        '400': { $ref: '#/components/responses/Error' }
+        '502': { $ref: '#/components/responses/Error' }
+    get:
+      tags: [Invoices]
+      summary: List invoices, newest first
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Invoice' } } } } }
+  /invoices/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    get:
+      tags: [Invoices]
+      summary: Get one invoice
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Invoice' } } } }
+        '404': { $ref: '#/components/responses/Error' }
+  /invoices/{id}/advance:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    post:
+      tags: [Invoices]
+      summary: Underwrite the invoice and, if approved, pay the freelancer
+      description: >
+        The rule engine prices the advance, Claude reviews it (it can only keep, reduce or
+        decline, never raise), then a PayPal Payout is sent with an idempotency key.
+        A declined invoice can be retried.
+      responses:
+        '200':
+          description: Decision made (check `decision.approved`)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  decision: { $ref: '#/components/schemas/Decision' }
+                  invoice: { $ref: '#/components/schemas/Invoice' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '502': { $ref: '#/components/responses/Error' }
+  /ledger:
+    get:
+      tags: [Books]
+      summary: Account balances and the 30 most recent entries
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  balances: { type: object, additionalProperties: { type: integer } }
+                  entries: { type: array, items: { type: object } }
+                  exposure_cents: { type: integer }
+                  balanced: { type: boolean, description: True when all balances sum to zero }
+  /webhooks/paypal:
+    post:
+      tags: [Webhooks]
+      summary: PayPal webhook receiver (signature-verified)
+      description: Handles INVOICING.INVOICE.PAID (settle) and INVOICING.INVOICE.CANCELLED (write off if advanced). Duplicate event IDs are ignored.
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses:
+        '200': { description: Processed or ignored }
+        '401': { $ref: '#/components/responses/Error' }
+  /demo/invoices/{id}/pay:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    post:
+      tags: [Demo]
+      summary: Simulate the client paying (only when DEMO_MODE=true)
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Invoice' } } } }
+  /demo/invoices/{id}/default:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    post:
+      tags: [Demo]
+      summary: Simulate the client never paying (only when DEMO_MODE=true)
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Invoice' } } } }
+  /meta:
+    get:
+      summary: Environment info and the synthetic demo clients
+      responses:
+        '200': { description: OK }
+  /healthz:
+    get:
+      summary: Liveness check
+      responses:
+        '200': { description: OK }
+components:
+  parameters:
+    id: { name: id, in: path, required: true, schema: { type: string }, example: INV2-MOCK-0001 }
+  responses:
+    Error:
+      description: Error
+      content: { application/json: { schema: { type: object, properties: { error: { type: string } } } } }
+  schemas:
+    NewInvoice:
+      type: object
+      required: [freelancer_email, client_email, amount_cents]
+      properties:
+        freelancer_email: { type: string, format: email, description: Receives the payouts }
+        client_email: { type: string, format: email }
+        amount_cents: { type: integer, minimum: 100, maximum: 10000000, example: 250000 }
+        description: { type: string, maxLength: 200, example: Website redesign, phase 2 }
+        currency: { type: string, default: USD }
+    Invoice:
+      type: object
+      properties:
+        id: { type: string }
+        freelancer_email: { type: string }
+        client_email: { type: string }
+        description: { type: string }
+        amount_cents: { type: integer }
+        currency: { type: string }
+        status: { type: string, enum: [sent, advancing, declined, advanced, settling, settled, defaulted, cancelled] }
+        pay_url: { type: string, description: PayPal page where the client pays }
+        decision: { $ref: '#/components/schemas/Decision' }
+        advance_cents: { type: integer }
+        fee_cents: { type: integer }
+        payout_batch_id: { type: string }
+        created_at: { type: string, format: date-time }
+        advanced_at: { type: string, format: date-time }
+        closed_at: { type: string, format: date-time }
+    Decision:
+      type: object
+      properties:
+        approved: { type: boolean }
+        risk_score: { type: number, minimum: 0, maximum: 1 }
+        advance_cents: { type: integer }
+        fee_cents: { type: integer }
+        reasons: { type: array, items: { type: string } }
+        explanation: { type: string, description: Plain-English reason for the freelancer }
+        red_flags: { type: array, items: { type: string } }
+        reviewed_by: { type: string, enum: [claude, rules] }
+        ai_verdict: { type: string, enum: [approve, reduce, decline] }
